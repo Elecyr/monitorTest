@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- -------------------------------------------------------------------------------
+
+     Created by Bill Southworth, Jan. 18, 2015
+     Copyright 2015 Elecyr Corporation
+
+     ------------------------------------------------------------------------------- -->
+
+<head>
+
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ELECYR Energy Monitor</title>
+  <meta name="generator" content="Bootply" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Latest compiled and minified CSS -->
+  <link href="http://fonts.googleapis.com/css?family=Lato:100,300,400,700" media="all" rel="stylesheet" type="text/css" />
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+  <link href="bootstrap/css/bootstrap-switch.css" rel="stylesheet">
+  <link href="bootstrap/css/styles.css" media="all" rel="stylesheet" type="text/css">
+
+  <!-- Optional theme -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css">
+
+  <!-- jQuery -->
+  <script type="text/javascript" src="http://code.jquery.com/jquery-1.11.1.min.js"></script>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+
+  <!-- Latest compiled and minified JavaScript -->
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <script src="bootstrap/js/bootstrap-switch.js"></script>
+  <script src="bootstrap/js/D3-tip.js"></script>
+
+  <!-- Include the PubNub Library -->
+  <script src="https://cdn.pubnub.com/pubnub.min.js"></script>
+  <!-- <script src="config-local.js"></script> -->
+  <script src="config.js"></script>
+</head>
+
+<!-- -------------------------------------------------------------------------------
+     BODY CONTAINS MULTIPLE SECTIONS - STATUS DISPLAY AT TOP, D3 PACK NEXT
+     ------------------------------------------------------------------------------- -->
+
+<body class="page-header-fixed bg-1">
+
+  <div class="container-fluid">
+    
+<!-- -------------------------------------------------------------------------------
+     TOP OF PAGE STATUS DISPLAY
+     ------------------------------------------------------------------------------- -->
+
+		<div class="row">
+
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div class="number" small><small>TODAY</small></div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="currentsolar" class="number" small>4.4</div>
+				<div class="text" small id="currenttime">kW solar at 3:45pm</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="peaksolar" class="number">11.4</div>
+				<div class="text" small id="currenttime">peak solar at 12:15pm</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="gridpower" class="number">-0.9</div>
+				<div class="text" small id="currenttime">kilowatts grid power</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="gridpower" class="number">-8.7</div>
+				<div class="text" small id="currenttime">kWH grid energy</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="gridpower" class="number">OK</div>
+				<div class="text" small id="currenttime">no errors</div>
+			</div>          
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="peaksolar" class="number">94<small>%</small></div>
+				<div class="text" small>state of charge</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div class="number">2.5</div>
+				<div class="text">kW battery charge</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="kwstored" class="number">57.2</div>
+				<div class="text">kWH energy stored</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div id="systemvoltage" class="number">402.3</div>
+				<div class="text">system voltage</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div class="number">7.0</div>
+				<div class="text">kW house loads</div>
+			</div>
+			<div class="col-xs-4 col-sm-3 col-md-2">
+				<div class="number">8.3</div>
+				<div class="text">hours remaining</div>
+			</div>
+		</div>
+
+<!-- -------------------------------------------------------------------------------
+     BEGINNING OF SECTION WITH D3 PACK
+     ------------------------------------------------------------------------------- -->
+
+    <div class="row">
+      <!-- D3.js Pack -->
+      <div class="col-md-12">
+        <div class="widget-container fluid-height">
+
+          
+<!-- -------------------------------------------------------------------------------
+     BOOTSTRAP SWITCH  (REMOVE)
+     ------------------------------------------------------------------------------- -->
+
+        <div id="graph"></div>
+
+        <script type="text/javascript">
+            $("[name='charge']").bootstrapSwitch();
+            $("[name='load']").bootstrapSwitch();
+        </script>
+
+        <script>
+          
+/*   -------------------------------------------------------------------------------
+      TOOLTIP
+     ------------------------------------------------------------------------------- */
+ 
+       var tip = d3.tip()
+         .attr('class', 'd3-tip')
+         .offset([-10, 0])
+         .html(function(d) {
+              if ( d.depth == 1) {
+                  var html = "Stack: " + d.children[0].identity
+                             + "<br>  IP: " + d.children[0].ip
+                             + "<br>  voltage: " + d.children[0].totalVoltage + " vdc"
+                             + "<br>  range: " + d.children[0].minVoltage
+                                               + "-" + d.children[0].maxVoltage + " vdc"
+                             + "<br>  current: " + d.children[0].stackCurrent + " amps"
+                             + "<br>  power: " + d.children[0].stackPower + " kW"
+                             + "<br>  energy: " + d.children[0].stackEnergy + " kWH"
+                             + "<br>  charging: " + d.children[0].chargingStatus
+                             + "<br>  discharging: " + d.children[0].dischargingStatus;
+                  return html;
+              } else if (d.depth == 2) {
+                switch (d.type) {
+                  case 'drawer':
+                      var html = "Battery Module: " + d.unit
+                                 + "<br>  voltage: " + d.total + " vdc"
+                                 + "<br>  range: " + d.localMin
+                                                   + "-" + d.localMax + " vdc"
+                                 + "<br>  relay: " + d.relay
+                                 + "<br>  dissipate to: " + d.d_level + " vdc"
+                                 + "<br>  protect mode: " + d.protect_mode
+                                 + "<br>  temperature: " + d.temperature + "℃"
+                                 + "<br><br><table width='100%'><tr><th>Cell</th><th>Volts</th>"
+                                 + "<th>Cell</th><th>Volts</th></tr>";
+
+                      for (i=0; i < 7; i++) {
+                          html += "<tr><td>" + (i+1) + "</td><td><font color='"
+                                  + cellColor(d.cellvoltages[i])
+                                  + "'>" + d.cellvoltages[i] + "</font></td>";
+                          html += "<td>" + (i+8) + "</td><td><font color='"
+                                  + cellColor(d.cellvoltages[i+7])
+                                  + "'>" + d.cellvoltages[i+7] + "</font></td></tr>";
+                      }
+                      html += "</table>";
+                      return html;
+                case 'solar':
+                      return "Solar Array";
+                case 'gridconnect':
+                      return "Grid Connection";
+                case 'ac_inverter':
+                      return "AC Inverter";
+                case 'downStack':
+                      var html = "Stack: " + d.identity
+                                 + "<br>  IP: " + d.ip
+                                 + "<br>  STACK IS DOWN "
+                      return html;
+                default:
+                      return d.type;
+               }
+            }
+        });
+
+/*   -------------------------------------------------------------------------------
+     PUBNUB
+     ------------------------------------------------------------------------------- */
+
+        //Subscribe to the demo_tutorial channel
+        pubnub.subscribe({
+               channel: 'node-red',
+               message: function(m){
+               updateGauges(m); }
+        });
+ 
+/*    -------------------------------------------------------------------------------
+      VARIABLES AND COLOR CONTROLS
+      ------------------------------------------------------------------------------- */
+
+         var realData = [];
+         var graphData = {};
+         var streamCount = 10, interval = 0;
+         var circle, text, view;
+         var margin = 20, diameter = 820;
+         var width = $("#graph").width(), height = $("#graph").width();;
+
+         var color = d3.scale.linear()
+          .domain([-1, 5])
+          .range(["hsl(190,20%,100%)", "hsl(230,5%,40%)"])
+          .interpolate(d3.interpolateHcl);
+
+         function cellColor(size) {
+           var COMPRESSEDSCALE = true;
+           var colorvalue = d3.scale.linear()
+           .domain([0, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 5.0])
+           .range([0, 30, 40, 50, 60, 138, 138, 138, 138, 138, 138, 138, 138, 60, 50, 30, 10, 0])
+           .interpolate(d3.interpolate);
+
+           var compressedvalue = d3.scale.linear()
+           .domain([0, 3.0, 3.05, 3.10, 3.20, 3.24, 3.27, 3.30, 3.33, 3.35, 3.38, 3.41, 3.45, 3.50, 3.6, 3.9, 4.0, 5.0])
+           .range([0, 15, 20, 25, 30, 40, 50,   100, 125, 138, 125, 90, 50, 40, 30, 20, 10, 0])
+           .interpolate(d3.interpolate);
+           
+           if (COMPRESSEDSCALE) return(d3.hsl(compressedvalue(size), .5, .5));
+           else return(d3.hsl(colorvalue(size), .5, .5));
+          };
+  
+          function solarColor () {
+            daytime = new Date().getHours();
+            var color = d3.scale.linear()
+            .domain([0, 8, 11, 14,  17, 19, 24])
+            .range(["rgb(0,0,0)", "rgb(100,100,100)", "rgb(240,240,240)", "rgb(240,240,240)",
+                    "rgb(160,160,160)", "rgb(30,30,30)", "rgb(0,0,0)"])
+            .interpolate(d3.interpolate);
+            return(d3.rgb(color(daytime)));
+          }
+        
+          function sourceColor() {
+            return("hsl(0,100%,0%)");
+          };
+          
+          function unitColor (size, type) {
+            if (type == "drawer") return (cellColor(size));
+            if (type == "solar") return (solarColor());
+            return (sourceColor());
+          }
+
+/*    -------------------------------------------------------------------------------
+      SETUP THE D3 PACK STRUCTURES
+      ------------------------------------------------------------------------------- */
+
+          var pack = d3.layout.pack()
+          .padding(2)
+          .size([width - margin, height - margin])
+          .value(function(d) { return d.capacity; /*d.size;*/ })
+          
+          var svg = d3.select("#graph").append("svg")
+          .attr("preserveAspectRatio", "xMidYMid")
+          .attr("viewBox", "0 0 " + width + " " + height)
+          .append("g")
+          .attr("class", "main")
+          .attr("transform", "translate(" + margin / 2 + "," + margin / 2 + ")");
+          
+          svg.call(tip);
+          
+          d3.select(self.frameElement).style("height", height + "px");
+          
+          function zoom(d) {
+            var focus0 = focus; focus = d;
+            
+            var transition = d3.transition()
+            .duration(d3.event.altKey ? 7500 : 750)
+            .tween("zoom", function(d) {
+                   var i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2 + margin]);
+                   return function(t) { zoomTo(i(t)); };
+                   });
+          }
+          
+          function zoomTo(v) {
+            //var k = diameter / v[2];
+            var k = width / v[2];
+            view = v;
+            node.attr("transform", function(d) { return "translate(" + ((d.x - v[0]) * k + width / 2) + "," + ((d.y - v[1]) * k + width / 2) + ")"; });
+            circle.attr("r", function(d) { return d.r * k; });
+          }
+
+
+/*    -------------------------------------------------------------------------------
+      DELETE STALE NODES
+      ------------------------------------------------------------------------------- */
+
+          var id = setInterval(function() {
+             date = new Date();
+             time = date.getTime();
+             var foundIt = false;
+             
+             for (var realNo in realData) {
+               if (realData[realNo].timestamp != 'undefined') {
+                 if ((time - realData[realNo].timestamp) > 300000) {
+                    realData.splice(realNo, 1);
+                    foundIt = true;
+                 }
+               }
+             }//simultegggggg
+             if (foundIt) svg.selectAll(".node-g") .remove()
+          }, 5000);
+
+/*    -------------------------------------------------------------------------------
+      UPDATING ON PUBNUB DATA IN
+      ------------------------------------------------------------------------------- */
+
+          function updateGauges(pubString)
+          {
+            // pubString format
+            // {"total":49.39,"identity":"3614BBBK8999","type":"stack","unit":"1","cellvoltages":[3.51,3.48,3.49,3.62,3.55,3.46,3.53,3.49,3.56,3.51,3.6,3.55,3.56,3.48]}
+            
+            // update data from the PubNub stream
+            var pubData = JSON.parse(pubString);
+            
+            
+            
+            if (pubData.identity === 'SYSTEM') {
+              document.getElementById("systemvoltage").innerHTML = pubData.systemBus;
+              document.getElementById("kwstored").innerHTML = pubData.capacityTotal;
+            }
+            else {
+              var find = false;
+              
+              for (var realNo in realData) {
+                
+                if ((pubData.identity === realData[realNo].identity) &&
+                    (pubData.type === realData[realNo].type) &&
+                    (pubData.unit === realData[realNo].unit))
+                    {
+                      realData[realNo].timestamp = pubData.timestamp;
+                      realData[realNo].cellvoltages = pubData.cellvoltages;
+                      realData[realNo].totalVoltage = pubData.totalVoltage;
+                      realData[realNo].minVoltage = pubData.minVoltage;
+                      realData[realNo].maxVoltage = pubData.maxVoltage;
+                      realData[realNo].total = pubData.total;
+                      find = true;
+                      break;
+                    }
+              }
+              
+              if (pubData.type != 'alive') {
+               if (!find) { realData.push(pubData); }
+               realDataUpdate();
+              }
+            }
+          };
+            
+          function realDataUpdate() {
+            
+            // sort data
+            realData.sort(function(a, b) { return d3.ascending(a.identity, b.identity) || d3.ascending(a.unit, b.unit); });
+            
+            // make graph data
+            var nestedData = d3.nest()
+            .key(function(d)  { return d.identity; })
+            //.key(function(d)  { return d.unit; })
+            .entries(realData);
+            
+            nestedData.map(function(iItem) {
+                           
+                 iItem.name = iItem.key;
+                 delete iItem.key;
+                 iItem.children = [];
+                 iItem.class = '';
+                 iItem.level = 'identity';
+                 
+                 iItem.values.map(function(uItem) {
+                                  
+                    uItem.name = uItem.unit;
+                    uItem.level = 'unit';
+                    uItem.children = [];
+                    
+                    if (uItem.cellvoltages.length == 0) {   // type - gridconnect
+                    
+                    for (var i = 0; i < 14; i++) {
+                    var newChild = {};
+                    newChild.name = i;
+                    newChild.unit = uItem.unit;
+                    newChild.identity = uItem.identity;
+                    newChild.capacity = uItem.capacity / 14;
+                    newChild.amps = uItem.amps;
+                    newChild.size = 0;
+                    newChild.type = uItem.type;
+                    newChild.class = 'invisible';
+                    newChild.level = 'cell';
+                    
+                    uItem.children.push(newChild);
+                    }
+                    uItem.class = 'invisible_parent';
+                    }
+                    else {  // type - stack, solar
+                    uItem.cellvoltages.map(function(voltage, i) {
+                         
+                         var newChild = {};
+                         newChild.name = i;
+                         newChild.unit = uItem.unit;
+                         newChild.identity = uItem.identity;
+                         if (uItem.type == "solar") {
+                         newChild.capacity =  uItem.capacity / uItem.cellvoltages.length / 3;
+                         }
+                         else {
+                         newChild.capacity =  uItem.capacity / (uItem.cellvoltages.length * 8);
+                         }
+                         newChild.amps = uItem.amps;
+                         newChild.size = voltage;
+                         newChild.type = uItem.type;
+                         newChild.class = '';
+                         newChild.level = 'cell';
+                         
+                         uItem.children.push(newChild);
+                         });
+                    uItem.class = '';
+                    }
+                    iItem.children.push(uItem);
+                    });
+                 
+                 delete iItem.values;
+                 });
+                 
+                 graphData.name = '';  // let's leave blank for now
+                 graphData.children = nestedData;
+                 
+                 //reSortRoot(graphData, 0);
+                 
+                 // draw graph
+                 interval = (interval + 1) % streamCount;
+                 if (interval == 1) {                   
+                   if (document.documentElement.__transition__) return;
+                   draw();
+                 };
+          }
+          
+          function reSortRoot(root, depth) {
+            for (var key in root) {
+              if (key == "key") {
+                root.name = root.key;
+                delete root.key;
+                
+                if (depth == 1) {
+                  root.identity = root.key;
+                }
+                else if (depth == 2) {
+                  root.unit = root.key;
+                }
+              }
+              else if (key == "values") {
+                root.children = [];
+                
+                if (depth == 2){
+                }
+                else {
+                  for (item in root.values) {
+                    root.children.push(reSortRoot(root.values[item], depth + 1));
+                  }
+                  delete root.values;
+                }
+              }
+            }
+            return root;
+          }
+          
+          function draw() {
+            
+            var focus = root = graphData;
+            var nodes = pack.nodes(graphData);
+            
+            //svg.selectAll("text").remove();
+            
+            node = svg.selectAll(".node-g")
+            .data(nodes);
+            
+            node.enter().append("g")
+            .classed("node-g", true)
+            .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; })
+            .append("circle")
+            .attr("r", 0)
+            .attr("class", function(d) { return d.parent ? d.children ? "node " + d.class : "node node--leaf " + d.class : "node node--root"; })
+            .style("fill", function(d) { return d.children ? color(d.depth) : unitColor(d.size, d.type); })
+            .on("click", function(d){ if (focus !== d) zoom(d), d3.event.stopPropagation(); })
+            .transition()
+            .duration(1000)
+            .attr("r", function(d) { return d.r; });
+            
+            node.transition()
+            .duration(1000)
+            .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+            
+            node.select("circle")
+            .transition()
+            .duration(1000)
+            .attr("r", function(d) { return d.r; });
+
+            circle = svg.selectAll("circle")
+            .attr("class", function(d) { return d.parent ? d.children ? "node " + d.class : "node node--leaf " + d.class : "node node--root"; })
+            .style("fill", function(d) { return d.children ? color(d.depth) : unitColor(d.size, d.type) })
+
+/*   -------------------------------------------------------------------------------
+     CREATION AND DESTRUCTION OF TOOLTIPS ON MOUSE EVENTS
+     ------------------------------------------------------------------------------- */
+
+            svg.selectAll("circle")
+            
+            .on('mouseover', tip.show)
+            .on('mouseout', tip.hide);
+
+            view = [root.x, root.y, root.r * 2 + margin];
+          }
+
+/*   ------------------------------------------------------------------------------
+     RESIZE THE D3 WHEN THE WINDOW IS RESIZED
+     ------------------------------------------------------------------------------- */
+
+          d3.selection.prototype.moveToFront = function() {
+            return this.each(function(){
+                 this.parentNode.appendChild(this);
+                 });
+          };
+          
+          $(window).resize(function() {
+                 console.log ("resize" + width + "," + height);
+                 var w = $("#graph").width();
+                 svg.attr("width", w);
+                 svg.attr("height", w);
+                 draw();
+                 });
+                 
+            </script>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+ 
+</body>
+</html>
+
